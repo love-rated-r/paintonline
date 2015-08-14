@@ -11,7 +11,7 @@ local users = {}
 local buffer = {}
 local peers = {}
 
-local current_color = {120, 60, 255}
+local current_color = {255, 255, 255}
 local current_width = 2
 local current_size = 11
 
@@ -21,7 +21,12 @@ local headless = has_arg("--headless")
 local hosting = true--headless or has_arg("--hosting")
 local canvas_whole, big_font, font, small_font, fonts
 
+local colorpicker
+
 if not headless then
+  local w, h = 800, 600
+  colorpicker = require("colorpicker")
+  colorpicker:create(w / 2 - 200, h / 2 - 200, 200)
   -- graphics stuff
   canvas_whole = love.graphics.newCanvas()
   canvas_whole:renderTo(function()
@@ -52,8 +57,8 @@ end
 
 -- rules
 local rules = {}
-
 local server_rules = {
+  ["send mouse position"] = "yes"
 }
 
 -- networking stuff
@@ -136,6 +141,15 @@ add_struct(
     "args"
   }
 )
+add_struct(
+  "mouse_move", [[
+    uint8_t r, g, b;
+    uint16_t x, y;
+  ]], {
+    "r", "g", "b",
+    "x", "y"
+  }
+)
 
 -- utf8 support
 local utf8 = require("unicode")
@@ -176,8 +190,9 @@ function love.load()
   game_info = [[dick around with your friends!
 
   instructions:
-  - hold ctrl and scroll to change color,
+  - hold right mouse to change color,
   - hold left mouse button to draw,
+  - scroll to change width/text size,
   - press enter to type and enter/lmb to place the text,
   - press S to screenshot,
   - press red X to close.]]
@@ -194,6 +209,7 @@ function love.load()
 
   thanks to:
   - holo for his awesome cdata lib,
+  - alexar for his colorpicker lib,
   - nix for being a cool guy,
   - penis painters who crashed or lagged my server over and over.]]
 end
@@ -655,6 +671,14 @@ function love.draw()
     love.graphics.setColor(255, 255, 255, 180 + math.sin(love.timer.getTime() * 3) * 75)
     love.graphics.print(state, (w - font:getWidth(state)) / 2, (h - th) / 2)
   end
+
+  -- colordicker
+  if love.mouse.isDown(love._version_minor >= 10 and 2 or "r") then
+    love.graphics.setColor(0, 0, 0, 160)
+    love.graphics.rectangle("fill", 0, 0, w, h)
+
+    colorpicker:draw()
+  end
 end
 
 function love.update(dt)
@@ -668,6 +692,12 @@ function love.update(dt)
         table.remove(notification_queue, i)
       end
     end
+  end
+
+  -- colorpicker
+  if love.mouse.isDown(love._version_minor >= 10 and 2 or "r") then
+    colorpicker:update(dt)
+    current_color = colorpicker.sc
   end
 
   -- server update
@@ -749,6 +779,8 @@ if not headless then
       place_text(text, x, y)
     elseif btn == "wu" or btn == "wd" then
       love.wheelmoved(0, btn == "wu" and 1 or -1)
+    elseif btn == "r" or btn == 2 then
+      colorpicker:create(x - 200, y - 200, 200)
     end
   end
 
