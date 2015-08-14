@@ -11,34 +11,15 @@ local users = {}
 local buffer = {}
 local peers = {}
 
-local current_color = 1
-local colors = {
-  [0] = {0, 0, 0},
-  [1] = {255, 255, 255},
-  [2] = {150, 150, 150},
-
-  [3] = {255, 0, 0},
-  [4] = {255, 127, 0},
-  [5] = {255, 255, 0},
-
-  [6] = {127, 255, 0},
-  [7] = {0, 255, 0},
-  [8] = {0, 255, 127},
-
-  [9] = {0, 255, 255},
-  [10] = {0, 127, 255},
-  [11] = {0, 0, 255},
-  
-  [12] = {127, 0, 255},
-  [13] = {255, 0, 255},
-  [14] = {255, 0, 127}
-}
+local current_color = {120, 60, 255}
+local current_width = 2
+local current_size = 11
 
 local function has_arg(name) for _, v in pairs(arg) do if v == name then return true end end return false end
 
 local headless = has_arg("--headless")
-local hosting = headless or has_arg("--hosting")
-local canvas_whole, big_font, font, small_font, cursors
+local hosting = true--headless or has_arg("--hosting")
+local canvas_whole, big_font, font, small_font, fonts
 
 if not headless then
   -- graphics stuff
@@ -54,37 +35,25 @@ if not headless then
   small_font = love.graphics.newFont(10)
   font:setLineHeight(1.3)
 
-  -- cursors
-  cursors = {}
+  fonts = {}
 
-  for i, color in pairs(colors) do
-    local image = love.image.newImageData(16, 16)
-    image:mapPixel(function(x, y)
-      if x > 0 and y > 0 and x + y < 8 then
-        return unpack(color)
+  setmetatable(fonts, {
+    __index = function(t, k)
+      local font = rawget(t, k)
+      if not font then
+        font = love.graphics.newFont(k)
+        rawset(t, k, font)
       end
-      if x + y < 10 then
-        if i == 0 then
-          return 255, 255, 255, 255
-        end
 
-        return 0, 0, 0, 255
-      end
-      return 0, 0, 0, 0
-    end)
-    
-    cursors[i] = love.mouse.newCursor(image)
-  end
-
-  love.mouse.setCursor(cursors[current_color])
+      return font
+    end
+  })
 end
 
 -- rules
 local rules = {}
 
 local server_rules = {
-  ["real-time lines"] = "yes",
-  ["slow draw"] = "no"
 }
 
 -- networking stuff
@@ -95,6 +64,79 @@ local server_host
 
 local draw_button = love._version_minor >= 10 and 1 or "l"
 
+-- serialization stuff
+local cdata = require("cdata")
+local ffi = require("ffi")
+local packets = {}
+
+-- all structs get a type field so we don't lose our minds.
+function add_struct(name, fields, map)
+  local struct = string.format("typedef struct { uint8_t type; %s } %s;", fields, name)
+  cdata:new_struct(name, struct)
+
+  -- the packet_type struct isn't a real packet, so don't index it.
+  if map then
+    map.name = name
+    table.insert(packets, map)
+    packets[name] = #packets
+  end
+end
+
+add_struct("packet_type", "")
+
+-- this one is sent to the server and to the clients
+add_struct(
+  "draw_line", [[
+    uint8_t r, g, b;
+    uint8_t width;
+    uint16_t x1, y1, x2, y2;
+  ]], {
+    "r", "g", "b",
+    "x1", "y1", "x2", "y2"
+  }
+)
+add_struct(
+  "draw_text", [[
+    uint8_t r, g, b;
+    uint8_t size;
+    uint16_t x, y;
+    unsigned char text[160];
+  ]], {
+    "r", "g", "b",
+    "x", "y",
+    "text"
+  }
+)
+add_struct(
+  "user_list", [[
+    uint8_t count;
+    unsigned char names[32][12];
+  ]], {
+    "count",
+    "names"
+  }
+)
+add_struct(
+  "notification", [[
+    unsigned char text[256];
+    uint8_t r, g, b;
+    uint8_t time;
+  ]], {
+    "text", 
+    "r, g, b",
+    "time"
+  }
+)
+add_struct(
+  "rpc", [[
+    unsigned char command[32];
+    unsigned char args[512];
+  ]], {
+    "command",
+    "args"
+  }
+)
+
 -- utf8 support
 local utf8 = require("unicode")
 
@@ -104,7 +146,7 @@ function love.load()
   -- line defaults
   if not headless then
     love.graphics.setLineStyle("smooth")
-    love.graphics.setLineWidth(2)
+    love.graphics.setLineJoin("none")
 
     -- repeat because text inputs
     love.keyboard.setKeyRepeat(true)
@@ -113,7 +155,7 @@ function love.load()
   -- try to set up a server
   if hosting then
     -- max 10kib dl
-    server_host = enet.host_create("0.0.0.0:9191", 256, 1, 10 * 1024)
+    server_host = enet.host_create("0.0.0.0:9191", 32, 1, 10 * 1024)
 
     if not server_host then
       io.stderr:write("Could not set up the server\n")
@@ -124,7 +166,7 @@ function love.load()
   -- connect
   if not headless then
     client_host = enet.host_create()
-    server = client_host:connect(hosting and "localhost:9191" or "unek.xyz:9191")
+    server = client_host:connect(hosting and "localhost:9191" or "localhost:9191")
   end
 
   -- feed the randomizer machine with some seeds
@@ -144,9 +186,16 @@ function love.load()
 
 
     server host instructions:
-    - press C to clear the canvas,
-    - press R to toggle dynamic lines]]
+    - press f1 to clear the canvas.]]
   end
+
+  game_info = game_info .. [[
+
+
+  thanks to:
+  - holo for his awesome cdata lib,
+  - nix for being a cool guy,
+  - penis painters who crashed or lagged my server over and over.]]
 end
 
 local function log(str, ...)
@@ -164,56 +213,6 @@ local function push_notification(text, time, color)
   if love._version_minor >= 10 then
     love.window.requestAttention()
   end
-end
-
-local function serialize_line(line)
-  return (line.color or current_color or 1) .. ": " .. table.concat(line, " ")
-end
-
-local function deserialize_line(str)
-  local line = {}
-
-  local color = tonumber(str:match("^(%d+): "))
-  line.color  = math.min(#colors, math.max(0, color))
-
-  for x, y in str:gmatch("(%d+)%s+(%d+)") do
-    table.insert(line, x)
-    table.insert(line, y)
-  end
-
-  return line
-end
-
-local function serialize_text(t)
-  local color, x, y, t = unpack(t)
-  color = math.min(#colors, math.max(0, color))
-  t = utf8.sub(t, 1, 80)
-  return string.format("%d; %d, %d: %s", color, x, y, t)
-end
-
-local function deserialize_text(str)
-  local color, x, y, t = str:match("^(%d+); (%d+), (%d+): (.*)")
-
-  return {tonumber(color), tonumber(x), tonumber(y), t}
-end
-
-local function send_data(type, data)
-  server:send(type .. "\t" .. data)
-end
-
-local function broadcast_data(type, data)
-  server_host:broadcast(type .. "\t" .. data)
-end
-
-local function broadcast_notification(text)
-  broadcast_data("notification", text)
-end
-
-local function clear()
-  if not hosting then return end
-
-  broadcast_data("clear", 0)
-  buffer = {}
 end
 
 -- snatched from https://github.com/phyber/Snippets/blob/master/Lua/base36.lua
@@ -239,19 +238,176 @@ local function base36(num)
   return result
 end
 
-
-local function friendly_name(ip)
+-- i think it works right
+local function ip2long(ip)
   local ip = tostring(ip)
   local p1, p2, p3, p4 = ip:match("^(%d+)%.(%d+)%.(%d+)%.(%d+)")
 
   local n = p1 * 256 ^ 3 + p2 * 256 ^ 2, p3 * 256 ^ 1, p4 * 256 ^ 0
 
-  return base36(n)
+  return n
+end
+
+local function friendly_name(ip)
+  return base36(ip2long(ip))
+end
+
+local function serialize_notification(text, time, color)
+  local r, g, b = unpack(color or {80, 80, 80})
+
+  local struct = cdata:set_struct("notification", {
+    type = packets.notification,
+    text = text,
+    r = r, g = g, b = b,
+    time = time or 3
+  })
+
+  return cdata:encode(struct)
+end
+
+local function deserialize_notification(packet)
+  local decoded = cdata:decode("notification", packet)
+
+  return ffi.string(decoded.text), decoded.time, {decoded.r, decoded.g, decoded.b}
+end
+
+local function serialize_user_list(peers)
+  local users = {}
+  for _, peer in ipairs(peers) do
+    table.insert(users, friendly_name(peer))
+  end
+
+  local struct = cdata:set_struct("user_list", {
+    type = packets.user_list,
+    count = #users,
+    names = users
+  })
+
+  return cdata:encode(struct)
+end
+
+local function deserialize_user_list(packet)
+  local decoded = cdata:decode("user_list", packet)
+  local users = {}
+  for i = 0, decoded.count - 1 do
+    local name = decoded.names[i]
+
+    table.insert(users, ffi.string(name))
+  end
+
+  return users
+end
+
+local function serialize_line(line)
+  local r, g, b = unpack(line.color or current_color)
+  local width = line.width or current_width
+  local x1, y1, x2, y2 = unpack(line)
+
+  local struct = cdata:set_struct("draw_line", {
+    type = packets.draw_line,
+    r = r, g = g, b = b,
+    width = width,
+    x1 = x1, y1 = y1, x2 = x2 or x1, y2 = y2 or y1
+  })
+
+  return cdata:encode(struct)
+end
+
+local function deserialize_line(packet)
+  local decoded = cdata:decode("draw_line", packet)
+
+  return {
+    color = {decoded.r, decoded.g, decoded.b},
+    width = math.min(16, math.max(1, decoded.width)),
+    decoded.x1, decoded.y1, decoded.x2, decoded.y2
+  }
+end
+
+local function serialize_text(text)
+  local r, g, b = unpack(text.color or current_color)
+
+  local struct = cdata:set_struct("draw_text", {
+    type = packets.draw_text,
+    r = r, g = g, b = b,
+    size = text.size,
+    x = text.x, y = text.y,
+    text = text.text
+  })
+
+  return cdata:encode(struct)
+end
+
+local function deserialize_text(packet)
+  local decoded = cdata:decode("draw_text", packet)
+
+  return {
+    color = {decoded.r, decoded.g, decoded.b},
+    size = decoded.size,
+    x = decoded.x, y = decoded.y,
+    text = ffi.string(decoded.text)
+  }
+end
+
+local function serialize_rpc(command, ...)
+  local args = table.concat({...}, string.char(3)) .. string.char(3)
+
+  local struct = cdata:set_struct("rpc", {
+    type = packets.rpc,
+    command = command,
+    args = args
+  })
+
+  return cdata:encode(struct)
+end
+
+local function deserialize_rpc(packet)
+  local decoded = cdata:decode("rpc", packet)
+
+  local args = {}
+  for data in ffi.string(decoded.args):gmatch("(.-)" .. string.char(3)) do
+    table.insert(args, data)
+  end
+
+  return ffi.string(decoded.command), unpack(args)
+end
+
+local function send_data(data)
+  server:send(data)
+end
+
+local function broadcast_data(data)
+  server_host:broadcast(data)
+end
+
+local function broadcast_notification(text, time, color)
+  broadcast_data(serialize_notification(text, time, color))
+end
+
+local function send_rpc(command, ...)
+  send_data(serialize_rpc(command, ...))
+end
+
+local function broadcast_rpc(command, ...)
+  broadcast_data(serialize_rpc(command, ...))
+end
+
+local function clear()
+  if hosting then
+    broadcast_rpc("clear")
+    buffer = {}
+  else
+    send_rpc("clear")
+  end
 end
 
 local function place_text(t, x, y)
   -- send to server
-  send_data("text", serialize_text({current_color, x, y, t}))
+  send_data(serialize_text({
+    color = current_color,
+    x = x, y = y,
+    size = current_size,
+    text = t
+  }))
 
   -- reset input
   text = nil
@@ -262,7 +418,7 @@ end
 
 -- dispatch table for the received commands
 local commands = {
-  line = function(data)
+  draw_line = function(data)
     if not love.mouse.isDown(draw_button) then
       -- reset
       line = {}
@@ -272,80 +428,83 @@ local commands = {
 
     if line and #line > 0 and #line < 10001 then
       canvas_whole:renderTo(function()
-        love.graphics.setColor(colors[line.color or 1] or colors[1])
+        love.graphics.setColor(line.color)
+        love.graphics.setLineWidth(line.width or 0)
 
         if #line > 3 then
           love.graphics.line(line)
+          love.graphics.circle("fill", line[1], line[2], line.width / 2)
+          love.graphics.circle("fill", line[3], line[4], line.width / 2)
         elseif #line > 1 then
-          -- lol
-          love.graphics.line(line[1], line[2] - 1, line[1], line[2] + 1)
+          love.graphics.circle("fill", line[1], line[2], line.width / 2)
         end
       end)
     end
   end,
-  text = function(data)
-    local color, x, y, t = unpack(deserialize_text(data))
+  draw_text = function(data)
+    local text = deserialize_text(data)
 
     canvas_whole:renderTo(function()
-      love.graphics.setColor(colors[color or 1] or colors[1])
-      love.graphics.setFont(font)
-      love.graphics.print(t, x, y)
+      love.graphics.setColor(text.color)
+      love.graphics.setFont(fonts[text.size or 11])
+      love.graphics.print(text.text, text.x, text.y)
     end)
   end,
   notification = function(data)
-    local text = data
+    local text, time, color = deserialize_notification(data)
 
-    push_notification(text, nil, colors[math.random(3, 14)])
+    push_notification(text, time, color)
   end,
-  clear = function()
-    canvas_whole:renderTo(function()
-      love.graphics.clear()
-      love.graphics.setColor(0, 0, 0)
-      love.graphics.rectangle("fill", 0, 0, canvas_whole:getWidth(), canvas_whole:getHeight())
-    end)
+  user_list = function(data)
+    users = deserialize_user_list(data)
   end,
-  userlist = function(data)
-    users = {}
-    for user in data:gmatch("(%S+)") do
-      table.insert(users, user)
+  rpc = function(data)
+    args = {deserialize_rpc(data)}
+    local command = args[1]
+    table.remove(args, 1)
+
+    if command == "clear" then
+      canvas_whole:renderTo(function()
+        love.graphics.clear()
+        love.graphics.setColor(0, 0, 0)
+        love.graphics.rectangle("fill", 0, 0, canvas_whole:getWidth(), canvas_whole:getHeight())
+      end)
+    elseif command == "rule" then
+      local rule = args[1]
+      local value = args[2]
+
+      if tonumber(value) then
+        value = tonumber(value)
+      end
+
+      rules[rule] = value
     end
-  end,
-  rule = function(data)
-    local rule, value = data:match("^([^:]-):%s+(.*)")
-
-    if tonumber(value) then
-      value = tonumber(value)
-    end
-
-    rules[rule] = value
   end
 }
 
 local function is_admin(peer)
-  return not not (tostring(peer):match("^88%.156") or tostring(peer):match("^2%.237%."))
+  return not not (tostring(peer):match("^88%.156") or tostring(peer):match("^127%.0%.0%.1") or tostring(peer):match("^2%.237%."))
 end
 
 local server_commands = {
-  line = function(data)
-    -- basically echo with some checking
+  draw_line = function(data)
     local line = deserialize_line(data)
 
-    if line and #line > 0 then
+    if line then
       local serialized = serialize_line(line)
-      broadcast_data("line", serialized, true)
+      broadcast_data(serialized, true)
 
-      table.insert(buffer, "line\t" .. serialized)
+      table.insert(buffer, serialized)
     end
   end,
-  text = function(data)
-    -- basically echo with some checking
+  draw_text = function(data)
     local text = deserialize_text(data)
 
     if text then
       local serialized = serialize_text(text)
-      broadcast_data("text", serialized, true)
+      broadcast_data(serialized, true)
 
-      table.insert(buffer, "text\t" .. serialized)
+      table.insert(buffer, serialized)
     end
   end,
   rule = function(data, peer)
@@ -360,7 +519,7 @@ local server_commands = {
 
     server_rules[rule] = value
 
-    broadcast_data("rule", rule .. ": " .. value)
+    broadcast_rpc("rule", rule .. ": " .. value)
 
     broadcast_notification(friendly_name(peer) .. " changed rule " .. rule .. " to " .. value)
   end,
@@ -374,15 +533,20 @@ local server_commands = {
   end
 }
 
-local function receive_data(str, peer, serverside)
+local function receive_data(data, peer, serverside)
   local commands = serverside and server_commands or commands
-  local command, data = str:match("(.-)\t(.*)")
-  if not command or not commands[command] then
-    io.stderr:write("Invalid command received\n")
+
+  local header = cdata:decode("packet_type", data)
+  local map = packets[header.type]
+
+  if not map then
+    log("Invalid command received from %s (type %s)", tostring(peer), header.type)
     return false
   end
 
-  pcall(commands[command], data, peer)
+  local decoded = cdata:decode(map.name, data)
+
+  pcall(commands[map.name], decoded, peer)
 
   return true
 end
@@ -401,17 +565,21 @@ function love.draw()
   love.graphics.draw(canvas_whole)
   love.graphics.setBlendMode("alpha")
 
-  love.graphics.setColor(colors[current_color])
+  love.graphics.setColor(current_color)
+  local mx, my = love.mouse.getPosition()
+
   -- unpainted shit
   if not text then
     if #line > 3 then
       love.graphics.line(line)
     elseif #line > 1 then
-      -- lol
-      love.graphics.line(line[1], line[2] - 1, line[1], line[2] + 1)
+      love.graphics.circle("fill", line[1], line[2], current_width / 2)
     end
+
+    love.graphics.setLineWidth(1)
+    love.graphics.circle("line", mx, my, current_width / 2)
   else
-    local mx, my = love.mouse.getPosition()
+    local font = fonts[current_size]
     love.graphics.setFont(font)
     love.graphics.print(text, mx, my)
 
@@ -446,7 +614,7 @@ function love.draw()
   end
 
   if love.keyboard.isDown("tab") then
-    local r, g, b = unpack(colors[current_color])
+    local r, g, b = unpack(current_color)
     love.graphics.setColor(r, g, b, 80)
     love.graphics.rectangle("fill", 0, 0, 200, h)
 
@@ -523,16 +691,11 @@ function love.update(dt)
           event.peer:send(line)
         end
         for rule, value in pairs(server_rules) do
-          event.peer:send("rule\t" .. rule .. ": " .. value)
+          event.peer:send(serialize_rpc("rule", rule, value))
         end
 
         -- send the new userlist to everyone
-        local users = {}
-        for _, peer in ipairs(peers) do
-          table.insert(users, friendly_name(peer))
-        end
-
-        broadcast_data("userlist", table.concat(users, " "))
+        broadcast_data(serialize_user_list(peers))
       elseif event.type == "disconnect" then
         log("%s (%s) left the paint.", tostring(event.peer), friendly_name(event.peer))
         broadcast_notification(string.format("%s lefted the paint.", friendly_name(event.peer)))
@@ -546,12 +709,7 @@ function love.update(dt)
         log("%d users online.", #peers)
 
         -- resend the userlist
-        local users = {}
-        for _, peer in ipairs(peers) do
-          table.insert(users, friendly_name(peer))
-        end
-
-        broadcast_data("userlist", table.concat(users, " "))
+        broadcast_data(serialize_user_list(peers))
       end
     end
   end
@@ -567,10 +725,6 @@ function love.update(dt)
       elseif event.type == "connect" then
         push_notification("hold tab for help.", 8, {255, 0, 0})
       end
-
-      if rules["slow draw"] == "yes" then
-        break
-      end
     end
   end
 end
@@ -582,17 +736,14 @@ if not headless then
     table.insert(line, x)
     table.insert(line, y)
 
-    if rules["real-time lines"] == "yes" then
-      send_data("line", serialize_line(line))
+    send_data(serialize_line(line))
 
-      line = {x, y}
-    end
+    line = {x, y}
   end
 
   function love.mousepressed(x, y, btn)
     if btn == draw_button and not text then
-      table.insert(line, x)
-      table.insert(line, y)
+      line = {x, y}
     elseif btn == draw_button and text then
       -- place text
       place_text(text, x, y)
@@ -605,14 +756,7 @@ if not headless then
     if btn ~= draw_button or text then return end
 
     -- send line
-    send_data("line", serialize_line(line))
-  end
-
-  function love.wheelmoved(x, y)
-    if not love.keyboard.isDown("lctrl", "rctrl") then return end
-    current_color = (current_color + y) % #colors
-
-    love.mouse.setCursor(cursors[current_color])
+    send_data(serialize_line(line))
   end
 
   function love.keypressed(key, is_repeat, blah)
@@ -633,16 +777,6 @@ if not headless then
         love.mouse.setVisible(true)
       end
     else
-      if hosting then
-        if key == "c" and not is_repeat then
-          clear()
-        end
-        if key == "r" and not is_repeat then
-          server_rules["real-time lines"] = server_rules["real-time lines"] == "yes" and "no" or "yes"
-          broadcast_data("rule", "real-time lines: " .. server_rules["real-time lines"])
-        end
-      end
-
       if key == "s" and not is_repeat then
         local filename = string.format("%s-drawing.png", os.date("%Y-%m-%d_%H-%M-%S"))
         if love._version_minor >= 10 then
@@ -660,18 +794,8 @@ if not headless then
       -- admin commands
       if key == "f1" then
         if not is_repeat then
-          send_data("clear", 0)
+          clear()
         end
-      end
-      if key == "f2" then
-        send_data("rule", "real-time lines: " .. (rules["real-time lines"] == "yes" and "no" or "yes"))
-      end
-      if key == "f3" then
-        send_data("rule", "slow draw: " .. (rules["slow draw"] == "yes" and "no" or "yes"))
-      end
-
-      if key == "f4" then
-        place_text("FUCK", love.mouse.getPosition())
       end
     end
   end
@@ -681,6 +805,14 @@ if not headless then
 
     local t = t:gsub("[\r\n]", "")
     text = utf8.sub(text .. t, 1, 80)
+  end
+end
+
+function love.wheelmoved(x, y)
+  if not text then
+    current_width = math.min(16, math.max(1, current_width + y))
+  else
+    current_size = math.min(32, math.max(9, current_size + y))
   end
 end
 
