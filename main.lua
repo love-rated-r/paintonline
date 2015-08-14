@@ -20,7 +20,7 @@ local current_size = 11
 local function has_arg(name) for _, v in pairs(arg) do if v == name then return true end end return false end
 
 local headless = has_arg("--headless")
-local hosting = true--headless or has_arg("--hosting")
+local hosting = has_arg("--hosting")
 local canvas_whole, big_font, font, small_font, fonts
 
 local colorpicker
