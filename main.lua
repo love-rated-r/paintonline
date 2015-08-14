@@ -6,10 +6,12 @@ local game_info = ""
 local line = {}
 local text = nil
 local users = {}
+local mouses = setmetatable({}, {__mode = "k"})
 
 -- this is for the server
 local buffer = {}
 local peers = {}
+local peer_mouses = setmetatable({}, {__mode = "k"})
 
 local current_color = {255, 255, 255}
 local current_width = 2
@@ -143,11 +145,29 @@ add_struct(
 )
 add_struct(
   "mouse_move", [[
-    uint8_t r, g, b;
+    uint8_t id;
     uint16_t x, y;
   ]], {
-    "r", "g", "b",
+    "id",
     "x", "y"
+  }
+)
+add_struct(
+  "mouse_add", [[
+    uint8_t id;
+    uint8_t width;
+    uint8_t r, g, b;
+  ]], {
+    "id",
+    "width",
+    "x", "y"
+  }
+)
+add_struct(
+  "mouse_remove", [[
+    uint8_t id;
+  ]], {
+    "id"
   }
 )
 
@@ -169,7 +189,7 @@ function love.load()
   -- try to set up a server
   if hosting then
     -- max 10kib dl
-    server_host = enet.host_create("0.0.0.0:9191", 32, 1, 10 * 1024)
+    server_host = enet.host_create("0.0.0.0:9292", 32, 1, 10 * 1024)
 
     if not server_host then
       io.stderr:write("Could not set up the server\n")
@@ -180,7 +200,7 @@ function love.load()
   -- connect
   if not headless then
     client_host = enet.host_create()
-    server = client_host:connect(hosting and "localhost:9191" or "localhost:9191")
+    server = client_host:connect(hosting and "localhost:9292" or "unek.xyz:9292")
   end
 
   -- feed the randomizer machine with some seeds
@@ -387,6 +407,55 @@ local function deserialize_rpc(packet)
   return ffi.string(decoded.command), unpack(args)
 end
 
+local function serialize_mouse_move(id, x, y)
+  local struct = cdata:set_struct("mouse_move", {
+    type = packets.mouse_move,
+    id = id or 0,
+    x = x, y = y
+  })
+
+  return cdata:encode(struct)
+end
+
+local function deserialize_mouse_move(packet)
+  local decoded = cdata:decode("mouse_move", packet)
+
+  return decoded.id, decoded.x or 0, decoded.y or 0
+end
+
+local function serialize_mouse_add(id, width, color)
+  local r, g, b = unpack(color)
+  local struct = cdata:set_struct("mouse_add", {
+    type = packets.mouse_add,
+    id = id,
+    width = width,
+    r = r, g = g, b = b
+  })
+
+  return cdata:encode(struct)
+end
+
+local function deserialize_mouse_add(packet)
+  local decoded = cdata:decode("mouse_add", packet)
+
+  return decoded.id, decoded.width or 2, {decoded.r, decoded.g, decoded.b}
+end
+
+local function serialize_mouse_remove(id)
+  local struct = cdata:set_struct("mouse_remove", {
+    type = packets.mouse_remove,
+    id = id or 0
+  })
+
+  return cdata:encode(struct)
+end
+
+local function deserialize_mouse_remove(packet)
+  local decoded = cdata:encode("mouse_remove", packet)
+
+  return decoded.id
+end
+
 local function send_data(data)
   server:send(data)
 end
@@ -408,12 +477,8 @@ local function broadcast_rpc(command, ...)
 end
 
 local function clear()
-  if hosting then
-    broadcast_rpc("clear")
-    buffer = {}
-  else
-    send_rpc("clear")
-  end
+  broadcast_rpc("clear")
+  buffer = {}
 end
 
 local function place_text(t, x, y)
@@ -494,7 +559,49 @@ local commands = {
       end
 
       rules[rule] = value
+
+      if rule == "send mouse position" then
+        if value == "yes" then
+          send_data(serialize_mouse_add(nil, current_width, current_color))
+        elseif value == "no" then
+          mouses = {}
+        end
+      end
     end
+  end,
+  mouse_move = function(data)
+    local id, x, y = deserialize_mouse_move(data)
+
+    if not mouses[id] then
+      mouses[id] = {
+        x = x,
+        y = y,
+        width = 2,
+        color = {255, 255, 255}
+      }
+    else
+      mouses[id].x, mouses[id].y = x, y
+    end
+  end,
+  mouse_add = function(data)
+    local id, width, color = deserialize_mouse_add(data)
+
+    if not mouses[id] then
+      mouses[id] = {
+        x = 0,
+        y = 0,
+        width = width,
+        color = color
+      }
+    else
+      mouses[id].color = color
+      mouses[id].width = width
+    end
+  end,
+  mouse_remove = function(data)
+    local id = deserialize_mouse_remove(data)
+
+    mouses[id] = nil
   end
 }
 
@@ -502,6 +609,7 @@ local function is_admin(peer)
   return not not (tostring(peer):match("^88%.156") or tostring(peer):match("^127%.0%.0%.1") or tostring(peer):match("^2%.237%."))
 end
 
+counter = 0
 local server_commands = {
   draw_line = function(data)
     local line = deserialize_line(data)
@@ -523,29 +631,67 @@ local server_commands = {
       table.insert(buffer, serialized)
     end
   end,
-  rule = function(data, peer)
-    log("%s is trying to use the rule admin command (%s)", tostring(peer), data or "")
-    if not is_admin(peer) then return end
+  rpc = function(data, peer)
+    args = {deserialize_rpc(data)}
+    local command = args[1]
+    table.remove(args, 1)
 
-    local rule, value = data:match("^([^:]-):%s+(.*)")
+    if command == "clear" and is_admin(peer) then
+      clear()
 
-    if tonumber(value) then
-      value = tonumber(value)
+      broadcast_notification(friendly_name(peer) .. " cleared the canvas.", 1, {120, 0, 0})
+    elseif command == "rule" and is_admin(peer) then
+      local rule = args[1]
+      local value = args[2]
+
+      if tonumber(value) then
+        value = tonumber(value)
+      end
+
+      server_rules[rule] = value
+
+      broadcast_rpc("rule", rule, value)
+
+      broadcast_notification(friendly_name(peer) .. " changed rule " .. rule .. " to " .. value .. ".", 3, {0, 120, 0})
+    end
+  end,
+  mouse_move = function(data, peer)
+    if server_rules["send mouse position"] ~= "yes" then return end
+
+    local id = peer_mouses[peer]
+    if not id then return end
+
+    local _, x, y = deserialize_mouse_move(data)
+
+    if data then
+      broadcast_data(serialize_mouse_move(id, x, y))
+    end
+  end,
+  mouse_add = function(data, peer)
+    if server_rules["send mouse position"] ~= "yes" then return end
+
+    local id = peer_mouses[peer]
+
+    if not id then
+      -- increase counter
+      counter = counter + 1
+      -- set the id to the new value
+      id = counter
+      -- assign the id to client's mouse
+      peer_mouses[peer] = id
     end
 
-    server_rules[rule] = value
+    local _, width, color = deserialize_mouse_add(data)
 
-    broadcast_rpc("rule", rule .. ": " .. value)
-
-    broadcast_notification(friendly_name(peer) .. " changed rule " .. rule .. " to " .. value)
+    broadcast_data(serialize_mouse_add(id, width, color))
   end,
-  clear = function(data, peer)
-    log("%s is trying to use the clear admin command (%s)", tostring(peer), data or "")
-    if not is_admin(peer) then return end
+  mouse_remove = function(data, peer)
+    if server_rules["send mouse position"] ~= "yes" then return end
 
-    clear()
+    local id = peer_mouses[peer]
+    if not id then return end
 
-    broadcast_notification(friendly_name(peer) .. " cleared the canvas.")
+    broadcast_data(serialize_mouse_remove(id))
   end
 }
 
@@ -592,8 +738,10 @@ function love.draw()
       love.graphics.circle("fill", line[1], line[2], current_width / 2)
     end
 
-    love.graphics.setLineWidth(1)
-    love.graphics.circle("line", mx, my, current_width / 2)
+    if rules["send mouse position"] ~= "yes" then
+      love.graphics.setLineWidth(1)
+      love.graphics.circle("line", mx, my, current_width / 2)
+    end
   else
     local font = fonts[current_size]
     love.graphics.setFont(font)
@@ -606,6 +754,15 @@ function love.draw()
     love.graphics.print(string.format("%d char%s left", 80 - length, 80 - length == 1 and "" or "s"), mx, my - small_font:getHeight())
 
     love.graphics.rectangle("fill", mx + font:getWidth(text), my, 1, font:getHeight())
+  end
+
+  -- draw cursors
+  if rules["send mouse position"] == "yes" then
+    for id, mouse in pairs(mouses) do
+      love.graphics.setColor(mouse.color)
+      love.graphics.setLineWidth(1)
+      love.graphics.circle("line", mouse.x, mouse.y, mouse.width / 2)
+    end
   end
 
   -- notifications
@@ -730,6 +887,11 @@ function love.update(dt)
         log("%s (%s) left the paint.", tostring(event.peer), friendly_name(event.peer))
         broadcast_notification(string.format("%s lefted the paint.", friendly_name(event.peer)))
 
+        -- remove the mouse
+        if server_rules["send mouse position"] == "yes" then
+          broadcast_data(serialize_mouse_remove(peer_mouses[peer]))
+        end
+
         -- remove from the peer table
         for i = #peers, 1, -1 do
           if peers[i] == event.peer then
@@ -737,7 +899,6 @@ function love.update(dt)
           end
         end
         log("%d users online.", #peers)
-
         -- resend the userlist
         broadcast_data(serialize_user_list(peers))
       end
@@ -761,14 +922,18 @@ end
 
 if not headless then
   function love.mousemoved(x, y, dx, dy)
-    if not love.mouse.isDown(draw_button) then return end
+    if love.mouse.isDown(draw_button) then
+      table.insert(line, x)
+      table.insert(line, y)
 
-    table.insert(line, x)
-    table.insert(line, y)
+      send_data(serialize_line(line))
 
-    send_data(serialize_line(line))
+      line = {x, y}
+    end
 
-    line = {x, y}
+    if rules["send mouse position"] == "yes" then
+      send_data(serialize_mouse_move(0, x, y))
+    end
   end
 
   function love.mousepressed(x, y, btn)
@@ -785,10 +950,12 @@ if not headless then
   end
 
   function love.mousereleased(x, y, btn)
-    if btn ~= draw_button or text then return end
-
-    -- send line
-    send_data(serialize_line(line))
+    if btn == draw_button and not text then
+      -- send line
+      send_data(serialize_line(line))
+    elseif btn == "r" or btn == 2 then
+      send_data(serialize_mouse_add(nil, current_width, current_color))
+    end
   end
 
   function love.keypressed(key, is_repeat, blah)
@@ -824,9 +991,11 @@ if not headless then
       end
 
       -- admin commands
-      if key == "f1" then
-        if not is_repeat then
-          clear()
+      if not is_repeat then
+        if key == "f1" then
+          send_rpc("clear")
+        elseif key == "f2" then
+          send_rpc("rule", "send mouse position", rules["send mouse position"] == "yes" and "no" or "yes")
         end
       end
     end
@@ -842,7 +1011,12 @@ end
 
 function love.wheelmoved(x, y)
   if not text then
+    local original_width = current_width
     current_width = math.min(16, math.max(1, current_width + y))
+
+    if rules["send mouse position"] == "yes" and original_width ~= current_width then
+      send_data(serialize_mouse_add(nil, current_width, current_color))
+    end
   else
     current_size = math.min(32, math.max(9, current_size + y))
   end
