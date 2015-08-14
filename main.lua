@@ -8,7 +8,7 @@ local text = nil
 local users = {}
 
 -- this is for the server
-local draw_commands = {}
+local buffer = {}
 local peers = {}
 
 local current_color = 1
@@ -213,7 +213,7 @@ local function clear()
   if not hosting then return end
 
   broadcast_data("clear", 0)
-  draw_commands = {}
+  buffer = {}
 end
 
 -- snatched from https://github.com/phyber/Snippets/blob/master/Lua/base36.lua
@@ -334,7 +334,7 @@ local server_commands = {
       local serialized = serialize_line(line)
       broadcast_data("line", serialized, true)
 
-      table.insert(draw_commands, "line\t" .. serialized)
+      table.insert(buffer, "line\t" .. serialized)
     end
   end,
   text = function(data)
@@ -345,7 +345,7 @@ local server_commands = {
       local serialized = serialize_text(text)
       broadcast_data("text", serialized, true)
 
-      table.insert(draw_commands, "text\t" .. serialized)
+      table.insert(buffer, "text\t" .. serialized)
     end
   end,
   rule = function(data, peer)
@@ -519,7 +519,7 @@ function love.update(dt)
         log("%d users online.", #peers)
 
         -- send him the lines and texts
-        for _, line in ipairs(draw_commands) do
+        for _, line in ipairs(buffer) do
           event.peer:send(line)
         end
         for rule, value in pairs(server_rules) do
