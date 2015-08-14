@@ -699,6 +699,9 @@ local function receive_data(data, peer, serverside)
   local commands = serverside and server_commands or commands
 
   local header = cdata:decode("packet_type", data)
+  -- half-assed check against incorrect stuff
+  if not header or not header.type then return end
+
   local map = packets[header.type]
 
   if not map then
