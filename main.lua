@@ -235,7 +235,7 @@ function love.load()
 
 
   thanks to:
-  - holo for his awesome cdata lib,
+  - excessive (karai + holo supergroup) for his awesome cdata lib,
   - alexar for his colorpicker lib,
   - nix for being a cool guy,
   - penis painters who crashed or lagged my server over and over.]]
