@@ -247,6 +247,7 @@ function love.load()
   - hold left mouse button to draw,
   - press middle mouse button to pick a color from the canvas,
   - scroll to change width/text size,
+  - ctrl + scroll to change size more precisely,
   - press enter to type and enter/lmb to place the text,
   - press S to screenshot,
   - press red X to close.]]
@@ -264,7 +265,7 @@ function love.load()
   thanks to:
   - excessive (karai + holo supergroup) for his awesome cdata lib,
   - alexar for his colorpicker lib,
-  - nix, zorg, deltaf1, holo, videahgams, karai, maxwell for being a cool guys,
+  - nix, zorg, deltaf1, holo, videahgams, karai, maxwell for being cool guys,
   - penis painters who crashed or lagged my server over and over.]]
 end
 
@@ -842,6 +843,21 @@ local function receive_data(data, peer, serverside)
   return true
 end
 
+local function indicator_shit(str)
+  local amount, last_line = 0, str
+  for i = 1, utf8.len(str) do
+    if utf8.sub(str, i, i) == "\n" then
+      amount = amount + 1
+    end
+  end
+
+  if amount > 0 then
+    last_line = str:match("\n([^\n]*)$")
+  end
+
+  return amount, last_line
+end
+
 function love.draw()
   local w, h = love.graphics.getDimensions()
 
@@ -883,7 +899,8 @@ function love.draw()
     local length = utf8.len(text)
     love.graphics.print(string.format("%d char%s left", (rules["maximum text length"] or 80) - length, (rules["maximum text length"] or 80) - length == 1 and "" or "s"), mx, my - small_font:getHeight())
 
-    love.graphics.rectangle("fill", mx + font:getWidth(text), my, 1, font:getHeight())
+    local newlines, line = indicator_shit(text, "\n")
+    love.graphics.rectangle("fill", mx + font:getWidth(line), my + newlines * font:getHeight(), 1, font:getHeight())
   end
 
   -- draw cursors
@@ -907,7 +924,8 @@ function love.draw()
           local length = utf8.len(text)
           love.graphics.print(string.format("%d char%s left", (rules["maximum text length"] or 80) - length, (rules["maximum text length"] or 80) - length == 1 and "" or "s"), mx, my - small_font:getHeight())
 
-          love.graphics.rectangle("fill", mx + font:getWidth(text), my, 1, font:getHeight())
+          local newlines, line = indicator_shit(text, "\n")
+          love.graphics.rectangle("fill", mx + font:getWidth(line), my + newlines * font:getHeight(), 1, font:getHeight())
         end
       end
     end
@@ -1141,6 +1159,9 @@ if not headless then
           push_notification("copied to clipboard.", 1, {0, 80, 0})
         elseif key == "backspace" then
           text = text:gsub("%s*%S*%s*$", "")
+          send_data(serialize_set_text(nil, current_size, text))
+        elseif key == "return" then
+          text = utf8.sub(text .. "\n", 1, rules["maximum text length"] or 80)
           send_data(serialize_set_text(nil, current_size, text))
         end
       else
