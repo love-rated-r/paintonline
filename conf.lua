@@ -8,6 +8,8 @@ function love.conf(t)
   t.window.height = 600
   t.window.resizable = false
 
+  t.window.vsync = true
+
   if has_arg("--headless") then
     t.window = false
   end

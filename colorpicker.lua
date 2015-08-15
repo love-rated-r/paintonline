@@ -177,9 +177,15 @@ function cp:tri()
     mesh = love.graphics.newMesh(ver, nil,"fan")
   end
 
+  if love._version_minor < 10 then
+    self.canvas2:clear()
+  end
+
   self.canvas2:renderTo(
     function()
-      love.graphics.clear()
+      if love._version_minor >= 10 then
+        love.graphics.clear()
+      end
       love.graphics.setColor(255,255, 255, 255)
       love.graphics.draw(mesh, self.size,self.size)
     end

@@ -21,7 +21,7 @@ local function has_arg(name) for _, v in pairs(arg) do if v == name then return 
 
 local headless = has_arg("--headless")
 local hosting = has_arg("--hosting")
-local canvas_whole, big_font, font, small_font, fonts
+local canvas, big_font, font, small_font, fonts
 
 local colorpicker
 
@@ -30,11 +30,11 @@ if not headless then
   colorpicker = require("colorpicker")
   colorpicker:create(w / 2 - 200, h / 2 - 200, 200)
   -- graphics stuff
-  canvas_whole = love.graphics.newCanvas()
-  canvas_whole:renderTo(function()
+  canvas = love.graphics.newCanvas()
+  canvas:renderTo(function()
     love.graphics.clear()
     love.graphics.setColor(0, 0, 0)
-    love.graphics.rectangle("fill", 0, 0, canvas_whole:getWidth(), canvas_whole:getHeight())
+    love.graphics.rectangle("fill", 0, 0, canvas:getWidth(), canvas:getHeight())
   end)
 
   big_font = love.graphics.newFont(22)
@@ -212,6 +212,7 @@ function love.load()
   instructions:
   - hold right mouse to change color,
   - hold left mouse button to draw,
+  - press middle mouse button to pick a color from the canvas,
   - scroll to change width/text size,
   - press enter to type and enter/lmb to place the text,
   - press S to screenshot,
@@ -508,7 +509,7 @@ local commands = {
     local line = deserialize_line(data)
 
     if line and #line > 0 and #line < 10001 then
-      canvas_whole:renderTo(function()
+      canvas:renderTo(function()
         love.graphics.setColor(line.color)
         love.graphics.setLineWidth(line.width or 0)
 
@@ -525,7 +526,7 @@ local commands = {
   draw_text = function(data)
     local text = deserialize_text(data)
 
-    canvas_whole:renderTo(function()
+    canvas:renderTo(function()
       love.graphics.setColor(text.color)
       love.graphics.setFont(fonts[text.size or 11])
       love.graphics.print(text.text, text.x, text.y)
@@ -545,10 +546,10 @@ local commands = {
     table.remove(args, 1)
 
     if command == "clear" then
-      canvas_whole:renderTo(function()
+      canvas:renderTo(function()
         love.graphics.clear()
         love.graphics.setColor(0, 0, 0)
-        love.graphics.rectangle("fill", 0, 0, canvas_whole:getWidth(), canvas_whole:getHeight())
+        love.graphics.rectangle("fill", 0, 0, canvas:getWidth(), canvas:getHeight())
       end)
     elseif command == "rule" then
       local rule = args[1]
@@ -727,7 +728,7 @@ function love.draw()
     love.graphics.setBlendMode("premultiplied")
   end
 
-  love.graphics.draw(canvas_whole)
+  love.graphics.draw(canvas)
   love.graphics.setBlendMode("alpha")
 
   love.graphics.setColor(current_color)
@@ -814,7 +815,7 @@ function love.draw()
     end
     rule_list = table.concat(rule_list, "\n")
 
-    local text = ("%s\n\nusers online (%d):\n- %s\n\nserver rules:\n%s\n\nnetwork info:\n- bandwidth used: %.2f kib\n- ping: %d ms"):format(game_info, #users, table.concat(users, ",\n- "), rule_list, bandwidth, server:round_trip_time(  ))
+    local text = ("%s\n\nusers online (%d):\n- %s\n\nserver rules:\n%s\n\nnetwork info:\n- bandwidth used: %.2f kib\n- ping: %d ms\n- fps: %d"):format(game_info, #users, table.concat(users, ",\n- "), rule_list, bandwidth, server:round_trip_time(), love.timer.getFPS())
 
     love.graphics.setColor(0, 0, 0)
     love.graphics.printf(text, 5 + 1, 5 + 1 + big_font:getHeight() + 5, 190)
@@ -949,6 +950,14 @@ if not headless then
       love.wheelmoved(0, btn == "wu" and 1 or -1)
     elseif btn == "r" or btn == 2 then
       colorpicker:create(x - 200, y - 200, 200)
+    elseif btn == "m" or btn == 3 then
+      local r, g, b
+      if love._version_minor >= 10 then
+        r, g, b = canvas:newImageData():getPixel(x, y)
+      else
+        r, g, b = canvas:getPixel(x, y)
+      end
+      current_color = {r, g, b}
     end
   end
 
@@ -982,9 +991,9 @@ if not headless then
       if key == "s" and not is_repeat then
         local filename = string.format("%s-drawing.png", os.date("%Y-%m-%d_%H-%M-%S"))
         if love._version_minor >= 10 then
-          canvas_whole:newImageData():encode("png", filename)
+          canvas:newImageData():encode("png", filename)
         else
-          canvas_whole:getImageData():encode(filename)
+          canvas:getImageData():encode(filename)
         end
         push_notification("screenshot saved.", 3, {255, 255, 0})
       end
