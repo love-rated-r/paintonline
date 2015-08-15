@@ -452,7 +452,7 @@ local function serialize_mouse_remove(id)
 end
 
 local function deserialize_mouse_remove(packet)
-  local decoded = cdata:encode("mouse_remove", packet)
+  local decoded = cdata:decode("mouse_remove", packet)
 
   return decoded.id
 end
