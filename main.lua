@@ -973,6 +973,9 @@ function love.update(dt)
         table.insert(peers, event.peer)
         log("%d users online.", #peers)
 
+        -- i need it
+        love.filesystem.write("online", #peers)
+
         -- send him the lines and texts
         for _, line in ipairs(buffer) do
           event.peer:send(line)
@@ -999,6 +1002,10 @@ function love.update(dt)
           end
         end
         log("%d users online.", #peers)
+
+        -- i need it
+        love.filesystem.write("online", #peers)
+
         -- resend the userlist
         broadcast_data(serialize_user_list(peers))
       end
