@@ -64,7 +64,8 @@ local server_rules = {
   ["minimum brush width"] = 2,
   ["maximum brush width"] = 32,
   ["minimum text size"] = 8,
-  ["maximum text size"] = 32
+  ["maximum text size"] = 32,
+  ["maximum text length"] = 120
 }
 
 -- networking stuff
@@ -111,7 +112,7 @@ add_struct(
     uint8_t r, g, b;
     uint8_t size;
     uint16_t x, y;
-    unsigned char text[160];
+    unsigned char text[256];
   ]], {
     "r", "g", "b",
     "x", "y",
@@ -412,7 +413,7 @@ local function deserialize_text(packet)
   local decoded = cdata:decode("draw_text", packet)
 
   local size = math.min(rules["maximum text size"] or 32, math.max(rules["minimum text size"] or 9, decoded.size))
-  local text = utf8.sub(ffi.string(decoded.text), 0, 80)
+  local text = utf8.sub(ffi.string(decoded.text), 0, rules["maximum text length"] or 80)
 
   return {
     color = {decoded.r, decoded.g, decoded.b},
@@ -527,7 +528,7 @@ local function deserialize_set_text(packet)
   local decoded = cdata:decode("set_text", packet)
 
   local size = math.min(rules["maximum text size"] or 32, math.max(rules["minimum text size"] or 9, decoded.size))
-  local text = utf8.sub(ffi.string(decoded.text), 0, 80)
+  local text = utf8.sub(ffi.string(decoded.text), 0, rules["maximum text length"] or 80)
 
   return decoded.id, size, text, decoded.input
 end
@@ -880,7 +881,7 @@ function love.draw()
     love.graphics.setFont(small_font)
 
     local length = utf8.len(text)
-    love.graphics.print(string.format("%d char%s left", 80 - length, 80 - length == 1 and "" or "s"), mx, my - small_font:getHeight())
+    love.graphics.print(string.format("%d char%s left", (rules["maximum text length"] or 80) - length, (rules["maximum text length"] or 80) - length == 1 and "" or "s"), mx, my - small_font:getHeight())
 
     love.graphics.rectangle("fill", mx + font:getWidth(text), my, 1, font:getHeight())
   end
@@ -904,7 +905,7 @@ function love.draw()
           love.graphics.setFont(small_font)
 
           local length = utf8.len(text)
-          love.graphics.print(string.format("%d char%s left", 80 - length, 80 - length == 1 and "" or "s"), mx, my - small_font:getHeight())
+          love.graphics.print(string.format("%d char%s left", (rules["maximum text length"] or 80) - length, (rules["maximum text length"] or 80) - length == 1 and "" or "s"), mx, my - small_font:getHeight())
 
           love.graphics.rectangle("fill", mx + font:getWidth(text), my, 1, font:getHeight())
         end
@@ -1023,12 +1024,14 @@ function love.update(dt)
         -- i need it
         love.filesystem.write("online", #peers)
 
+        -- first send him the rules
+        for rule, value in pairs(server_rules) do
+          event.peer:send(serialize_rpc("rule", rule, value))
+        end
+
         -- send him the lines and texts
         for _, line in ipairs(buffer) do
           event.peer:send(line)
-        end
-        for rule, value in pairs(server_rules) do
-          event.peer:send(serialize_rpc("rule", rule, value))
         end
 
         -- send the new userlist to everyone
@@ -1128,18 +1131,32 @@ if not headless then
     end
 
     if text then
-      if key == "backspace" then
-        text = utf8.sub(text, 1, utf8.len(text) - 1)
-        send_data(serialize_set_text(nil, current_size, text))
-      end
-      if key == "return" and not is_repeat then
-        place_text(text, love.mouse.getPosition())
-      end
-      if key == "escape" then
-        text = nil
-        send_data(serialize_set_text(nil, current_size, text))
-        
-        love.mouse.setVisible(true)
+      local ctrl_key = love.system.getOS() == "OS X" and "gui" or "ctrl"
+      if love.keyboard.isDown("l" .. ctrl_key, "r" .. ctrl_key) then
+        if key == "v" then
+          text = utf8.sub(text .. love.system.getClipboardText(), 0, rules["maximum text length"] or 80)
+          send_data(serialize_set_text(nil, current_size, text))
+        elseif key == "c" then
+          love.system.setClipboardText(text)
+          push_notification("copied to clipboard.", 1, {0, 80, 0})
+        elseif key == "backspace" then
+          text = text:gsub("%s*%S*%s*$", "")
+          send_data(serialize_set_text(nil, current_size, text))
+        end
+      else
+        if key == "backspace" then
+          text = utf8.sub(text, 1, utf8.len(text) - 1)
+          send_data(serialize_set_text(nil, current_size, text))
+        end
+        if key == "return" and not is_repeat then
+          place_text(text, love.mouse.getPosition())
+        end
+        if key == "escape" then
+          text = nil
+          send_data(serialize_set_text(nil, current_size, text))
+          
+          love.mouse.setVisible(true)
+        end
       end
     else
       if key == "s" and not is_repeat then
@@ -1175,7 +1192,7 @@ if not headless then
     if not text then return end
 
     local t = t:gsub("[\r\n]", "")
-    text = utf8.sub(text .. t, 1, 80)
+    text = utf8.sub(text .. t, 1, rules["maximum text length"] or 80)
 
     if rules["send mouse position"] == "yes" then
       send_data(serialize_set_text(nil, current_size, text))
