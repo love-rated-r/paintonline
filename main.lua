@@ -191,7 +191,7 @@ function love.load()
   io.stdout:setvbuf("no")
 
   -- check if version >0.9.2
-  if love._version_minor == 9 and love._version_revision < 2 then
+  if not headless and love._version_minor == 9 and love._version_revision < 2 then
     error("You need at least LOVE 0.9.2 to draw dicks.")
     return
   end
