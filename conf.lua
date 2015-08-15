@@ -4,8 +4,8 @@ function love.conf(t)
   t.identity = "PENISDRAW"
 
   t.window.title = "PENISDRAW"
-  t.window.width = 800
-  t.window.height = 600
+  t.window.width = 1024
+  t.window.height = 768
   t.window.resizable = false
 
   t.window.vsync = true

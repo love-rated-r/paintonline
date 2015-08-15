@@ -7,6 +7,7 @@ local line = {}
 local text = nil
 local users = {}
 local mouses = setmetatable({}, {__mode = "k"})
+local my_mouse = nil
 
 -- this is for the server
 local buffer = {}
@@ -26,9 +27,8 @@ local canvas, big_font, font, small_font, fonts
 local colorpicker
 
 if not headless then
-  local w, h = 800, 600
   colorpicker = require("colorpicker")
-  colorpicker:create(w / 2 - 200, h / 2 - 200, 200)
+  colorpicker:create(0, 0, 200)
   -- graphics stuff
   canvas = love.graphics.newCanvas()
   canvas:renderTo(function()
@@ -171,6 +171,13 @@ add_struct(
   }
 )
 add_struct(
+  "mouse_set", [[
+    uint8_t id;
+  ]], {
+    "id"
+  }
+)
+add_struct(
   "set_text", [[
     uint8_t id;
     uint8_t size;
@@ -250,7 +257,7 @@ function love.load()
   thanks to:
   - excessive (karai + holo supergroup) for his awesome cdata lib,
   - alexar for his colorpicker lib,
-  - nix, zorg, deltaf1, holo, videahgams, karai for being a cool guys,
+  - nix, zorg, deltaf1, holo, videahgams, karai, maxwell for being a cool guys,
   - penis painters who crashed or lagged my server over and over.]]
 end
 
@@ -476,6 +483,21 @@ local function deserialize_mouse_remove(packet)
   return decoded.id
 end
 
+local function serialize_mouse_set(id)
+  local struct = cdata:set_struct("mouse_set", {
+    type = packets.mouse_set,
+    id = id or 0
+  })
+
+  return cdata:encode(struct)
+end
+
+local function deserialize_mouse_set(packet)
+  local decoded = cdata:decode("mouse_set", packet)
+
+  return decoded.id
+end
+
 local function serialize_set_text(id, size, text, input)
   local struct = cdata:set_struct("set_text", {
     type = packets.set_text,
@@ -546,7 +568,7 @@ local commands = {
 
     local line = deserialize_line(data)
 
-    if line and #line > 0 and #line < 10001 then
+    if line and #line > 0 then
       canvas:renderTo(function()
         love.graphics.setColor(line.color)
         love.graphics.setLineWidth(line.width or 0)
@@ -645,6 +667,11 @@ local commands = {
     local id = deserialize_mouse_remove(data)
 
     mouses[id] = nil
+  end,
+  mouse_set = function(data)
+    local id = deserialize_mouse_set(data)
+
+    my_mouse = id
   end,
   set_text = function(data)
     local id, size, text, input = deserialize_set_text(data)
@@ -749,6 +776,8 @@ local server_commands = {
       id = counter
       -- assign the id to client's mouse
       peer_mouses[peer] = id
+
+      peer:send(serialize_mouse_set(id))
     end
 
     local _, width, color = deserialize_mouse_add(data)
@@ -801,6 +830,9 @@ function love.draw()
 
   -- painted shit
   love.graphics.setColor(255, 255, 255)
+
+  -- slime the magician recommended doing this
+  -- so the lines are always smooth
   if love._version_minor >= 10 then
     love.graphics.setBlendMode("alpha", false)
   else
@@ -810,10 +842,10 @@ function love.draw()
   love.graphics.draw(canvas)
   love.graphics.setBlendMode("alpha")
 
+  -- unpainted shit
   love.graphics.setColor(current_color)
   local mx, my = love.mouse.getPosition()
 
-  -- unpainted shit
   if not text then
     if #line > 3 then
       love.graphics.line(line)
@@ -821,46 +853,45 @@ function love.draw()
       love.graphics.circle("fill", line[1], line[2], current_width / 2)
     end
 
-    if rules["send mouse position"] ~= "yes" then
-      love.graphics.setLineWidth(1)
-      love.graphics.circle("line", mx, my, current_width / 2)
-    end
+    love.graphics.setLineWidth(1)
+    love.graphics.circle("line", mx, my, current_width / 2)
   else
-    if rules["send mouse position"] ~= "yes" then
-      local font = fonts[current_size]
-      love.graphics.setFont(font)
-      love.graphics.print(text, mx, my)
+    local font = fonts[current_size]
+    love.graphics.setFont(font)
+    love.graphics.print(text, mx, my)
 
-      love.graphics.setColor(255, 255, 255)
-      love.graphics.setFont(small_font)
+    love.graphics.setColor(255, 255, 255)
+    love.graphics.setFont(small_font)
 
-      local length = utf8.len(text)
-      love.graphics.print(string.format("%d char%s left", 80 - length, 80 - length == 1 and "" or "s"), mx, my - small_font:getHeight())
+    local length = utf8.len(text)
+    love.graphics.print(string.format("%d char%s left", 80 - length, 80 - length == 1 and "" or "s"), mx, my - small_font:getHeight())
 
-      love.graphics.rectangle("fill", mx + font:getWidth(text), my, 1, font:getHeight())
-    end
+    love.graphics.rectangle("fill", mx + font:getWidth(text), my, 1, font:getHeight())
   end
 
   -- draw cursors
   if rules["send mouse position"] == "yes" then
     for id, mouse in pairs(mouses) do
-      love.graphics.setColor(mouse.color)
-      love.graphics.setLineWidth(1)
-      if not mouse.text then
-        love.graphics.circle("line", mouse.x, mouse.y, mouse.width / 2)
-      else
-        local text, mx, my = mouse.text, mouse.x, mouse.y
-        local font = fonts[mouse.text_size]
-        love.graphics.setFont(font)
-        love.graphics.print(text, mx, my)
+      -- ignore own cursor
+      if id ~= my_mouse then
+        love.graphics.setColor(mouse.color)
+        love.graphics.setLineWidth(1)
+        if not mouse.text then
+          love.graphics.circle("line", mouse.x, mouse.y, mouse.width / 2)
+        else
+          local text, mx, my = mouse.text, mouse.x, mouse.y
+          local font = fonts[mouse.text_size]
+          love.graphics.setFont(font)
+          love.graphics.print(text, mx, my)
 
-        love.graphics.setColor(255, 255, 255)
-        love.graphics.setFont(small_font)
+          love.graphics.setColor(255, 255, 255)
+          love.graphics.setFont(small_font)
 
-        local length = utf8.len(text)
-        love.graphics.print(string.format("%d char%s left", 80 - length, 80 - length == 1 and "" or "s"), mx, my - small_font:getHeight())
+          local length = utf8.len(text)
+          love.graphics.print(string.format("%d char%s left", 80 - length, 80 - length == 1 and "" or "s"), mx, my - small_font:getHeight())
 
-        love.graphics.rectangle("fill", mx + font:getWidth(text), my, 1, font:getHeight())
+          love.graphics.rectangle("fill", mx + font:getWidth(text), my, 1, font:getHeight())
+        end
       end
     end
   end
