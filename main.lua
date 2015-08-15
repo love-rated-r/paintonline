@@ -1201,15 +1201,20 @@ if not headless then
 end
 
 function love.wheelmoved(x, y)
+  local ctrl_key = love.system.getOS() == "OS X" and "gui" or "ctrl"
+  if love.keyboard.isDown("l" .. ctrl_key, "r" .. ctrl_key) then
+    x, y = x * 1 / 3, y * 1 / 3
+  end
+
   if not text then
     local original_width = current_width
-    current_width = math.min(rules["maximum brush width"] or 16, math.max(rules["minimum brush width"] or 2, current_width + y))
+    current_width = math.min(rules["maximum brush width"] or 16, math.max(rules["minimum brush width"] or 2, current_width + y * 3))
 
     if rules["send mouse position"] == "yes" and original_width ~= current_width then
       send_data(serialize_mouse_add(nil, current_width, current_color))
     end
   else
-    current_size = math.min(rules["maximum text size"] or 32, math.max(rules["minimum text size"] or 9, current_size + y))
+    current_size = math.min(rules["maximum text size"] or 32, math.max(rules["minimum text size"] or 9, current_size + y * 3))
     send_data(serialize_set_text(nil, current_size, text))
   end
 end
