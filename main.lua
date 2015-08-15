@@ -1160,7 +1160,9 @@ if not headless then
         elseif key == "backspace" then
           text = text:gsub("%s*%S*%s*$", "")
           send_data(serialize_set_text(nil, current_size, text))
-        elseif key == "return" then
+        end
+      elseif love.keyboard.isDown("lshift", "rshift") then
+        if key == "return" then
           text = utf8.sub(text .. "\n", 1, rules["maximum text length"] or 80)
           send_data(serialize_set_text(nil, current_size, text))
         end
