@@ -170,6 +170,19 @@ add_struct(
     "id"
   }
 )
+add_struct(
+  "set_text", [[
+    uint8_t id;
+    uint8_t size;
+    unsigned char text[160];
+    bool input;
+  ]], {
+    "id",
+    "size",
+    "text",
+    "input"
+  }
+)
 
 -- utf8 support
 local utf8 = require("unicode")
@@ -463,6 +476,24 @@ local function deserialize_mouse_remove(packet)
   return decoded.id
 end
 
+local function serialize_set_text(id, size, text, input)
+  local struct = cdata:set_struct("set_text", {
+    type = packets.set_text,
+    id = id or 0,
+    size = size,
+    text = text or "",
+    input = input == nil and text ~= nil or input
+  })
+
+  return cdata:encode(struct)
+end
+
+local function deserialize_set_text(packet)
+  local decoded = cdata:decode("set_text", packet)
+
+  return decoded.id, decoded.size, ffi.string(decoded.text), decoded.input
+end
+
 local function send_data(data)
   server:send(data)
 end
@@ -499,6 +530,7 @@ local function place_text(t, x, y)
 
   -- reset input
   text = nil
+  send_data(serialize_set_text(nil, current_size, text))
 
   -- bring back mouse
   love.mouse.setVisible(true)
@@ -584,7 +616,9 @@ local commands = {
         x = x,
         y = y,
         width = 2,
-        color = {255, 255, 255}
+        color = {255, 255, 255},
+        text = nil,
+        text_size = 11
       }
     else
       mouses[id].x, mouses[id].y = x, y
@@ -598,7 +632,9 @@ local commands = {
         x = 0,
         y = 0,
         width = width,
-        color = color
+        color = color,
+        text = nil,
+        text_size = 11
       }
     else
       mouses[id].color = color
@@ -609,6 +645,25 @@ local commands = {
     local id = deserialize_mouse_remove(data)
 
     mouses[id] = nil
+  end,
+  set_text = function(data)
+    local id, size, text, input = deserialize_set_text(data)
+
+    if not input then text = nil end
+
+    if not mouses[id] then
+      mouses[id] = {
+        x = 0,
+        y = 0,
+        width = 2,
+        color = {255, 255, 255},
+        text = text,
+        text_size = size
+      }
+    else
+      mouses[id].text = text
+      mouses[id].text_size = size
+    end
   end
 }
 
@@ -699,6 +754,16 @@ local server_commands = {
     if not id then return end
 
     broadcast_data(serialize_mouse_remove(id))
+  end,
+  set_text = function(data, peer)
+    if server_rules["send mouse position"] ~= "yes" then return end
+
+    local id = peer_mouses[peer]
+    if not id then return end
+
+    local _, size, text, input = deserialize_set_text(data)
+
+    broadcast_data(serialize_set_text(id, size, text, input))
   end
 }
 
@@ -753,17 +818,19 @@ function love.draw()
       love.graphics.circle("line", mx, my, current_width / 2)
     end
   else
-    local font = fonts[current_size]
-    love.graphics.setFont(font)
-    love.graphics.print(text, mx, my)
+    if rules["send mouse position"] ~= "yes" then
+      local font = fonts[current_size]
+      love.graphics.setFont(font)
+      love.graphics.print(text, mx, my)
 
-    love.graphics.setColor(255, 255, 255)
-    love.graphics.setFont(small_font)
+      love.graphics.setColor(255, 255, 255)
+      love.graphics.setFont(small_font)
 
-    local length = utf8.len(text)
-    love.graphics.print(string.format("%d char%s left", 80 - length, 80 - length == 1 and "" or "s"), mx, my - small_font:getHeight())
+      local length = utf8.len(text)
+      love.graphics.print(string.format("%d char%s left", 80 - length, 80 - length == 1 and "" or "s"), mx, my - small_font:getHeight())
 
-    love.graphics.rectangle("fill", mx + font:getWidth(text), my, 1, font:getHeight())
+      love.graphics.rectangle("fill", mx + font:getWidth(text), my, 1, font:getHeight())
+    end
   end
 
   -- draw cursors
@@ -771,7 +838,22 @@ function love.draw()
     for id, mouse in pairs(mouses) do
       love.graphics.setColor(mouse.color)
       love.graphics.setLineWidth(1)
-      love.graphics.circle("line", mouse.x, mouse.y, mouse.width / 2)
+      if not mouse.text then
+        love.graphics.circle("line", mouse.x, mouse.y, mouse.width / 2)
+      else
+        local text, mx, my = mouse.text, mouse.x, mouse.y
+        local font = fonts[mouse.text_size]
+        love.graphics.setFont(font)
+        love.graphics.print(text, mx, my)
+
+        love.graphics.setColor(255, 255, 255)
+        love.graphics.setFont(small_font)
+
+        local length = utf8.len(text)
+        love.graphics.print(string.format("%d char%s left", 80 - length, 80 - length == 1 and "" or "s"), mx, my - small_font:getHeight())
+
+        love.graphics.rectangle("fill", mx + font:getWidth(text), my, 1, font:getHeight())
+      end
     end
   end
 
@@ -986,12 +1068,14 @@ if not headless then
     if text then
       if key == "backspace" then
         text = utf8.sub(text, 1, utf8.len(text) - 1)
+        send_data(serialize_set_text(nil, current_size, text))
       end
       if key == "return" and not is_repeat then
         place_text(text, love.mouse.getPosition())
       end
       if key == "escape" then
         text = nil
+        send_data(serialize_set_text(nil, current_size, text))
         
         love.mouse.setVisible(true)
       end
@@ -1007,6 +1091,8 @@ if not headless then
       end
       if key == "return" and not is_repeat then
         text = ""
+        send_data(serialize_set_text(nil, current_size, text))
+
         love.mouse.setVisible(false)
       end
 
@@ -1026,6 +1112,10 @@ if not headless then
 
     local t = t:gsub("[\r\n]", "")
     text = utf8.sub(text .. t, 1, 80)
+
+    if rules["send mouse position"] == "yes" then
+      send_data(serialize_set_text(nil, current_size, text))
+    end
   end
 end
 
@@ -1039,6 +1129,7 @@ function love.wheelmoved(x, y)
     end
   else
     current_size = math.min(32, math.max(9, current_size + y))
+    send_data(serialize_set_text(nil, current_size, text))
   end
 end
 
