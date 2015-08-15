@@ -60,7 +60,11 @@ end
 -- rules
 local rules = {}
 local server_rules = {
-  ["send mouse position"] = "yes"
+  ["send mouse position"] = "yes",
+  ["minimum brush width"] = 2,
+  ["maximum brush width"] = 32,
+  ["minimum text size"] = 8,
+  ["maximum text size"] = 32
 }
 
 -- networking stuff
@@ -221,6 +225,8 @@ function love.load()
       io.stderr:write("Could not set up the server\n")
       hosting = false
     end
+
+    rules = server_rules
   end
 
   -- connect
@@ -379,9 +385,11 @@ end
 local function deserialize_line(packet)
   local decoded = cdata:decode("draw_line", packet)
 
+  local width = math.min(rules["maximum brush width"] or 16, math.max(rules["minimum brush width"] or 2, decoded.width))
+
   return {
     color = {decoded.r, decoded.g, decoded.b},
-    width = math.min(16, math.max(1, decoded.width)),
+    width = width,
     decoded.x1, decoded.y1, decoded.x2, decoded.y2
   }
 end
@@ -403,11 +411,14 @@ end
 local function deserialize_text(packet)
   local decoded = cdata:decode("draw_text", packet)
 
+  local size = math.min(rules["maximum text size"] or 32, math.max(rules["minimum text size"] or 9, decoded.size))
+  local text = utf8.sub(ffi.string(decoded.text), 0, 80)
+
   return {
     color = {decoded.r, decoded.g, decoded.b},
-    size = decoded.size,
+    size = size,
     x = decoded.x, y = decoded.y,
-    text = ffi.string(decoded.text)
+    text = text
   }
 end
 
@@ -465,7 +476,9 @@ end
 local function deserialize_mouse_add(packet)
   local decoded = cdata:decode("mouse_add", packet)
 
-  return decoded.id, decoded.width or 2, {decoded.r, decoded.g, decoded.b}
+  local width = math.min(rules["maximum brush width"] or 16, math.max(rules["minimum brush width"] or 2, decoded.width))
+
+  return decoded.id, width, {decoded.r, decoded.g, decoded.b}
 end
 
 local function serialize_mouse_remove(id)
@@ -513,7 +526,10 @@ end
 local function deserialize_set_text(packet)
   local decoded = cdata:decode("set_text", packet)
 
-  return decoded.id, decoded.size, ffi.string(decoded.text), decoded.input
+  local size = math.min(rules["maximum text size"] or 32, math.max(rules["minimum text size"] or 9, decoded.size))
+  local text = utf8.sub(ffi.string(decoded.text), 0, 80)
+
+  return decoded.id, size, text, decoded.input
 end
 
 local function send_data(data)
@@ -1170,13 +1186,13 @@ end
 function love.wheelmoved(x, y)
   if not text then
     local original_width = current_width
-    current_width = math.min(16, math.max(1, current_width + y))
+    current_width = math.min(rules["maximum brush width"] or 16, math.max(rules["minimum brush width"] or 2, current_width + y))
 
     if rules["send mouse position"] == "yes" and original_width ~= current_width then
       send_data(serialize_mouse_add(nil, current_width, current_color))
     end
   else
-    current_size = math.min(32, math.max(9, current_size + y))
+    current_size = math.min(rules["maximum text size"] or 32, math.max(rules["minimum text size"] or 9, current_size + y))
     send_data(serialize_set_text(nil, current_size, text))
   end
 end
