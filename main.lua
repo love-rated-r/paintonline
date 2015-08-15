@@ -208,7 +208,7 @@ function love.load()
   -- try to set up a server
   if hosting then
     -- max 10kib dl
-    server_host = enet.host_create("0.0.0.0:9292", 32, 1, 10 * 1024)
+    server_host = enet.host_create("0.0.0.0:9292", 32, 1)
 
     if not server_host then
       io.stderr:write("Could not set up the server\n")
@@ -698,11 +698,19 @@ local server_commands = {
     local command = args[1]
     table.remove(args, 1)
 
-    if command == "clear" and is_admin(peer) then
+    if not is_admin(peer) then return end
+
+    if command == "clear" then
       clear()
 
-      broadcast_notification(friendly_name(peer) .. " cleared the canvas.", 1, {120, 0, 0})
-    elseif command == "rule" and is_admin(peer) then
+      broadcast_notification(friendly_name(peer) .. " cleared the canvas.", 2, {120, 0, 0})
+    elseif command == "save" then
+      local filename = string.format("%s-buffer.txt", os.date("%Y-%m-%d_%H-%M-%S"))
+
+      love.filesystem.write(filename, table.concat(buffer, "\n"))
+
+      broadcast_notification(friendly_name(peer) .. " saved the canvas.", 2, {120, 0, 0})
+    elseif command == "rule" then
       local rule = args[1]
       local value = args[2]
 
@@ -1101,6 +1109,8 @@ if not headless then
         if key == "f1" then
           send_rpc("clear")
         elseif key == "f2" then
+          send_rpc("save")
+        elseif key == "f3" then
           send_rpc("rule", "send mouse position", rules["send mouse position"] == "yes" and "no" or "yes")
         end
       end
