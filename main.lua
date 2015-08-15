@@ -180,7 +180,7 @@ function love.load()
   -- line defaults
   if not headless then
     love.graphics.setLineStyle("smooth")
-    love.graphics.setLineJoin("none")
+    love.graphics.setLineJoin("miter")
 
     -- repeat because text inputs
     love.keyboard.setKeyRepeat(true)
@@ -950,14 +950,6 @@ if not headless then
       love.wheelmoved(0, btn == "wu" and 1 or -1)
     elseif btn == "r" or btn == 2 then
       colorpicker:create(x - 200, y - 200, 200)
-    elseif btn == "m" or btn == 3 then
-      local r, g, b
-      if love._version_minor >= 10 then
-        r, g, b = canvas:newImageData():getPixel(x, y)
-      else
-        r, g, b = canvas:getPixel(x, y)
-      end
-      current_color = {r, g, b}
     end
   end
 
@@ -966,6 +958,16 @@ if not headless then
       -- send line
       send_data(serialize_line(line))
     elseif btn == "r" or btn == 2 then
+      send_data(serialize_mouse_add(nil, current_width, current_color))
+    elseif btn == "m" or btn == 3 then
+      local r, g, b
+      if love._version_minor >= 10 then
+        r, g, b = canvas:newImageData():getPixel(x, y)
+      else
+        r, g, b = canvas:getPixel(x, y)
+      end
+      current_color = {r, g, b}
+
       send_data(serialize_mouse_add(nil, current_width, current_color))
     end
   end
