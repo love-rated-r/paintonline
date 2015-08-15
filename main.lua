@@ -22,7 +22,7 @@ local function has_arg(name) for _, v in pairs(arg) do if v == name then return 
 
 local headless = has_arg("--headless")
 local hosting = has_arg("--hosting")
-local canvas, big_font, font, small_font, fonts
+local canvas, big_font, font, small_font, fonts, cursor
 
 local colorpicker
 
@@ -55,6 +55,38 @@ if not headless then
       return font
     end
   })
+
+  local cursor_pixels = {
+    {0, 0, 0, 255},
+    {255, 255, 255, 255},
+    {0, 0, 0, 255},
+    {255, 255, 255, 255},
+    {0, 0, 0, 0},
+    {0, 0, 0, 0},
+    {0, 0, 0, 0},
+    {0, 0, 0, 0},
+    {255, 255, 255, 255},
+    {0, 0, 0, 255}
+  }
+
+  local cursor_image = love.image.newImageData(#cursor_pixels * 2, #cursor_pixels * 2)
+  for i = 1, #cursor_pixels do
+    -- left to right
+    cursor_image:setPixel(i - 1, #cursor_pixels, unpack(cursor_pixels[i]))
+
+    -- right to left
+    cursor_image:setPixel(#cursor_pixels * 2 - i - 1, #cursor_pixels, unpack(cursor_pixels[i]))
+
+    -- top to bottom
+    cursor_image:setPixel(#cursor_pixels - 1, i, unpack(cursor_pixels[i]))
+
+    -- bottom to top
+    cursor_image:setPixel(#cursor_pixels - 1, #cursor_pixels * 2 - i, unpack(cursor_pixels[i]))
+  end
+
+  cursor = love.mouse.newCursor(cursor_image, #cursor_pixels, #cursor_pixels)
+
+  love.mouse.setCursor(cursor)
 end
 
 -- rules
@@ -265,7 +297,8 @@ function love.load()
   thanks to:
   - excessive (karai + holo supergroup) for his awesome cdata lib,
   - alexar for his colorpicker lib,
-  - nix, zorg, deltaf1, holo, videahgams, karai, maxwell for being cool guys,
+  - nix, zorg, deltaf1, holo, videahgams, karai, maxwell, sapper for being cool guys,
+  - other cool guys for being cool guys,
   - penis painters who crashed or lagged my server over and over.]]
 end
 
@@ -1069,6 +1102,10 @@ function love.update(dt)
             table.remove(peers, i)
           end
         end
+
+        -- and from the mouse table
+        peer_mouses[event.peer] = nil
+
         log("%d users online.", #peers)
 
         -- i need it
@@ -1157,8 +1194,11 @@ if not headless then
         elseif key == "c" then
           love.system.setClipboardText(text)
           push_notification("copied to clipboard.", 1, {0, 80, 0})
-        elseif key == "backspace" then
+        elseif key == "backspace" or key == "w" then
           text = text:gsub("%s*%S*%s*$", "")
+          send_data(serialize_set_text(nil, current_size, text))
+        elseif key == "u" then
+          text = ""
           send_data(serialize_set_text(nil, current_size, text))
         end
       elseif love.keyboard.isDown("lshift", "rshift") then
