@@ -1201,18 +1201,20 @@ if not headless then
           text = ""
           send_data(serialize_set_text(nil, current_size, text))
         end
-      elseif love.keyboard.isDown("lshift", "rshift") then
-        if key == "return" then
-          text = utf8.sub(text .. "\n", 1, rules["maximum text length"] or 80)
-          send_data(serialize_set_text(nil, current_size, text))
-        end
       else
         if key == "backspace" then
           text = utf8.sub(text, 1, utf8.len(text) - 1)
           send_data(serialize_set_text(nil, current_size, text))
         end
-        if key == "return" and not is_repeat then
-          place_text(text, love.mouse.getPosition())
+        if key == "return" then
+          if love.keyboard.isDown("lshift", "rshift") then
+            text = utf8.sub(text .. "\n", 1, rules["maximum text length"] or 80)
+            send_data(serialize_set_text(nil, current_size, text))
+          else
+            if not is_repeat then
+              place_text(text, love.mouse.getPosition())
+            end
+          end
         end
         if key == "escape" then
           text = nil
