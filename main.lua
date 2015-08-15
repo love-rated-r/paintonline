@@ -1050,7 +1050,7 @@ if not headless then
   end
 
   function love.mousereleased(x, y, btn)
-    if btn == draw_button and not text then
+    if btn == draw_button and not text and #line > 1 then
       -- send line
       send_data(serialize_line(line))
     elseif btn == "r" or btn == 2 then
