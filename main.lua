@@ -251,6 +251,10 @@ function love.load()
   - excessive (karai + holo supergroup) for his awesome cdata lib,
   - alexar for his colorpicker lib,
   - nix for being a cool guy,
+  - zorg for being a cool guy,
+  - deltaf1 for being a cool guy,
+  - holo for being a cool guy,
+  - videahgams for being a cool guy,
   - penis painters who crashed or lagged my server over and over.]]
 end
 
@@ -989,7 +993,7 @@ function love.update(dt)
 
         -- remove the mouse
         if server_rules["send mouse position"] == "yes" then
-          broadcast_data(serialize_mouse_remove(peer_mouses[peer]))
+          broadcast_data(serialize_mouse_remove(peer_mouses[event.peer]))
         end
 
         -- remove from the peer table
