@@ -250,11 +250,7 @@ function love.load()
   thanks to:
   - excessive (karai + holo supergroup) for his awesome cdata lib,
   - alexar for his colorpicker lib,
-  - nix for being a cool guy,
-  - zorg for being a cool guy,
-  - deltaf1 for being a cool guy,
-  - holo for being a cool guy,
-  - videahgams for being a cool guy,
+  - nix, zorg, deltaf1, holo, videahgams, karai for being a cool guys,
   - penis painters who crashed or lagged my server over and over.]]
 end
 
