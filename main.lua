@@ -13,11 +13,13 @@ local my_mouse = nil
 local buffer = {}
 local peers = {}
 local peer_mouses = setmetatable({}, {__mode = "k"})
+local votes = {}
 
 local current_color = {255, 255, 255}
 local current_width = 2
 local current_size = 11
 
+local function has_value(t, value) for _, v in pairs(t) do if value == v then return true end end return false end
 local function has_arg(name) for _, v in pairs(arg) do if v == name then return true end end return false end
 
 local headless = has_arg("--headless")
@@ -94,7 +96,7 @@ local rules = {}
 local server_rules = {
   ["send mouse position"] = "yes",
   ["minimum brush width"] = 2,
-  ["maximum brush width"] = 32,
+  ["maximum brush width"] = 64,
   ["minimum text size"] = 8,
   ["maximum text size"] = 32,
   ["maximum text length"] = 120
@@ -282,7 +284,7 @@ function love.load()
   - ctrl + scroll to change size more precisely,
   - press enter to type and enter/lmb to place the text,
   - press S to screenshot,
-  - press red X to close.]]
+  - press F4 to vote for canvas clear.]]
   if hosting then
     game_info = game_info .. [[
 
@@ -589,7 +591,9 @@ end
 
 local function clear()
   broadcast_rpc("clear")
+
   buffer = {}
+  votes = {}
 end
 
 local function place_text(t, x, y)
@@ -775,6 +779,27 @@ local server_commands = {
     args = {deserialize_rpc(data)}
     local command = args[1]
     table.remove(args, 1)
+
+    if command == "voteclear" then
+      if has_value(votes, peer) then
+        -- remove from votes table
+        for i, vote in pairs(votes) do
+          if vote == peer then
+            table.remove(votes, i)
+            break
+          end
+        end
+
+        broadcast_notification(friendly_name(peer) .. " cancelled his vote for clear.", 4, {180, 0, 0})
+      else
+        table.insert(votes, peer)
+        broadcast_notification(friendly_name(peer) .. " voted for clear (" .. #votes .. "/" .. math.floor(#peers * .7) .. ").", 4, {180, 0, 0})
+      end
+
+      if #votes >= math.floor(#peers * .7) then
+        broadcast_notification("canvas cleared.", 4, {255, 0, 0})
+      end
+    end
 
     if not is_admin(peer) then return end
 
@@ -1100,6 +1125,15 @@ function love.update(dt)
         for i = #peers, 1, -1 do
           if peers[i] == event.peer then
             table.remove(peers, i)
+            break
+          end
+        end
+
+        -- and from the votes table
+        for i, vote in pairs(votes) do
+          if vote == event.peer then
+            table.remove(votes, i)
+            break
           end
         end
 
@@ -1224,30 +1258,29 @@ if not headless then
         end
       end
     else
-      if key == "s" and not is_repeat then
-        local filename = string.format("%s-drawing.png", os.date("%Y-%m-%d_%H-%M-%S"))
-        if love._version_minor >= 10 then
-          canvas:newImageData():encode("png", filename)
-        else
-          canvas:getImageData():encode(filename)
-        end
-        push_notification("screenshot saved.", 3, {255, 255, 0})
-      end
-      if key == "return" and not is_repeat then
-        text = ""
-        send_data(serialize_set_text(nil, current_size, text))
+      if not is_repeat then
+        if key == "s" then
+          local filename = string.format("%s-drawing.png", os.date("%Y-%m-%d_%H-%M-%S"))
+          if love._version_minor >= 10 then
+            canvas:newImageData():encode("png", filename)
+          else
+            canvas:getImageData():encode(filename)
+          end
+          push_notification("screenshot saved.", 3, {255, 255, 0})
+        elseif key == "return" then
+          text = ""
+          send_data(serialize_set_text(nil, current_size, text))
 
-        love.mouse.setVisible(false)
-      end
+          love.mouse.setVisible(false)
+        elseif key == "f4" then
+          send_rpc("voteclear")
+        end
 
       -- admin commands
-      if not is_repeat then
         if key == "f1" then
           send_rpc("clear")
         elseif key == "f2" then
           send_rpc("save")
-        elseif key == "f3" then
-          send_rpc("rule", "send mouse position", rules["send mouse position"] == "yes" and "no" or "yes")
         end
       end
     end
