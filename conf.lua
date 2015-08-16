@@ -1,9 +1,9 @@
 local function has_arg(name) for _, v in pairs(arg) do if v == name then return true end end return false end
 
 function love.conf(t)
-  t.identity = "PENISDRAW"
+  t.identity = "Schlong Paaint Studio"
 
-  t.window.title = "PENISDRAW"
+  t.window.title = "Schlong Paaint Studio 7"
   t.window.width = 1024
   t.window.height = 768
   t.window.resizable = false
