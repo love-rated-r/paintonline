@@ -1,7 +1,7 @@
 local notification_queue = {}
 
 local game_info = ""
-local game_name = "Schlong Paaint Studio 7"
+local game_name = "Rob Schlong's Paaint Studio 7"
 
 -- this is for the client
 local line = {}
@@ -40,7 +40,7 @@ if not headless then
     love.graphics.rectangle("fill", 0, 0, canvas:getWidth(), canvas:getHeight())
   end)
 
-  big_font = love.graphics.newFont("noto.ttf", 17)
+  big_font = love.graphics.newFont("noto.ttf", 13)
   font = love.graphics.newFont("noto.ttf", 12)
   small_font = love.graphics.newFont("noto.ttf", 11)
   font:setLineHeight(1.3)
@@ -239,7 +239,7 @@ function love.load()
 
   -- check if version >0.9.2
   if not headless and love._version_minor == 9 and love._version_revision < 2 then
-    error("You need at least LOVE 0.9.2 to use Schlong Paaint Studio 7.")
+    error("You need at least LOVE 0.9.2 to use Rob Schlong's Paaint Studio 7.")
     return
   end
 
@@ -301,7 +301,7 @@ function love.load()
   - alexar for his colorpicker lib,
   - nix, zorg, deltaf1, holo, videahgams, karai, maxwell, sapper for being cool guys,
   - other cool guys for being cool,
-  - schlong Paainters who crashed or lagged my server over and over.]]
+  - Rob Schlong's Paainters who crashed or lagged my server over and over.]]
 end
 
 local function log(str, ...)
