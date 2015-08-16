@@ -37,9 +37,9 @@ if not headless then
     love.graphics.rectangle("fill", 0, 0, canvas:getWidth(), canvas:getHeight())
   end)
 
-  big_font = love.graphics.newFont(22)
-  font = love.graphics.newFont(11)
-  small_font = love.graphics.newFont(10)
+  big_font = love.graphics.newFont("noto.ttf", 22)
+  font = love.graphics.newFont("noto.ttf", 12)
+  small_font = love.graphics.newFont("noto.ttf", 11)
   font:setLineHeight(1.3)
 
   fonts = {}
