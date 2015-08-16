@@ -48,7 +48,7 @@ if not headless then
     __index = function(t, k)
       local font = rawget(t, k)
       if not font then
-        font = love.graphics.newFont(k)
+        font = love.graphics.newFont("noto.ttf", k)
         rawset(t, k, font)
       end
 
