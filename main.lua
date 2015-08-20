@@ -100,7 +100,8 @@ local server_rules = {
   ["maximum brush width"] = 64,
   ["minimum text size"] = 8,
   ["maximum text size"] = 32,
-  ["maximum text length"] = 120
+  ["maximum text length"] = 120,
+  ["fill enabled"] = "no"
 }
 
 -- networking stuff
@@ -200,7 +201,7 @@ add_struct(
   ]], {
     "id",
     "width",
-    "x", "y"
+    "r", "g", "b"
   }
 )
 add_struct(
@@ -228,6 +229,15 @@ add_struct(
     "size",
     "text",
     "input"
+  }
+)
+add_struct(
+  "fill", [[
+    uint8_t r, g, b;
+    uint16_t x, y;
+  ]], {
+    "r", "g", "b",
+    "x", "y"
   }
 )
 
@@ -569,6 +579,23 @@ local function deserialize_set_text(packet)
   return decoded.id, size, text, decoded.input
 end
 
+local function serialize_fill(x, y, color)
+  local r, g, b = unpack(color)
+  local struct = cdata:set_struct("fill", {
+    type = packets.fill,
+    x = x, y = y,
+    r = r, g = g, b = b
+  })
+
+  return cdata:encode(struct)
+end
+
+local function deserialize_fill(packet)
+  local decoded = cdata:decode("fill", packet)
+
+  return math.min(1024, math.max(0, decoded.x)), math.min(768, math.max(0, decoded.y)), {decoded.r, decoded.g, decoded.b}
+end
+
 local function send_data(data)
   server:send(data)
 end
@@ -611,6 +638,60 @@ local function place_text(t, x, y)
 
   -- bring back mouse
   love.mouse.setVisible(true)
+end
+
+
+-- stolen from https://love2d.org/forums/viewtopic.php?f=4&t=11753&start=10
+local fill_queue = {}
+local fill_imagedata
+local cw, ch
+local i = 1
+local function fill(x, y, from, to)
+  i = i + 1
+  local r, g, b
+  if x >= 0 and x < cw and y >= 0 and y < ch then
+    r, g, b = fill_imagedata:getPixel(x, y)
+  end
+
+  if r ~= from[1] and g ~= from[2] and b ~= from[3] then
+    if #fill_queue > 0 then
+      x, y = unpack(table.remove(fill_queue))
+      return fill(x, y, from, to)
+    else
+      if love._version_minor < 10 then
+        canvas:clear()
+      end
+      
+      canvas:renderTo(function()
+        if love._version_minor >= 10 then
+          love.graphics.clear()
+        end
+
+        love.graphics.setColor(255, 255, 255)
+        love.graphics.draw(love.graphics.newImage(fill_imagedata))
+      end)
+      return
+    end
+  end
+
+  fill_imagedata:setPixel(x, y, unpack(to))
+  table.insert(fill_queue, {x + 1, y})
+  table.insert(fill_queue, {x, y + 1})
+  table.insert(fill_queue, {x - 1, y})
+
+
+  return fill(x, y - 1, from, to)
+end
+local function start_fill(x, y, color)
+  if love._version_minor >= 10 then
+    fill_imagedata = canvas:newImageData()
+  else
+    fill_imagedata = canvas:getImageData()
+  end
+
+  cw, ch = fill_imagedata:getDimensions()
+
+  fill(x, y, {fill_imagedata:getPixel(x, y)}, color)
 end
 
 -- dispatch table for the received commands
@@ -746,6 +827,11 @@ local commands = {
       mouses[id].text = text
       mouses[id].text_size = size
     end
+  end,
+  fill = function(data)
+    local x, y, color = deserialize_fill(data)
+
+    start_fill(x, y, color)
   end
 }
 
@@ -881,6 +967,13 @@ local server_commands = {
     local _, size, text, input = deserialize_set_text(data)
 
     broadcast_data(serialize_set_text(id, size, text, input))
+  end,
+  fill = function(data, peer)
+    if server_rules["fill enabled"] ~= "yes" then return end
+
+    local x, y, color = deserialize_fill(data)
+
+    broadcast_data(serialize_fill(x, y, color))
   end
 }
 
@@ -900,7 +993,10 @@ local function receive_data(data, peer, serverside)
 
   local decoded = cdata:decode(map.name, data)
 
-  pcall(commands[map.name], decoded, peer)
+  local status, err = pcall(commands[map.name], decoded, peer)
+  if not status then
+    log("Error running command from %s: %s", tostring(peer), err)
+  end
 
   return true
 end
@@ -1276,6 +1372,11 @@ if not headless then
           send_data(serialize_set_text(nil, current_size, text))
 
           love.mouse.setVisible(false)
+        elseif key == "f" then
+          if rules["fill enabled"] == "yes" then
+            local x, y = love.mouse.getPosition()
+            send_data(serialize_fill(x, y, current_color))
+          end
         elseif key == "f4" then
           send_rpc("voteclear")
         end
