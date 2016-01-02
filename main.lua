@@ -1,7 +1,6 @@
 local notification_queue = {}
 
 local game_info = ""
-local game_name = "paintonline"
 
 -- this is for the client
 local line = {}
@@ -40,7 +39,7 @@ if not headless then
     love.graphics.rectangle("fill", 0, 0, canvas:getWidth(), canvas:getHeight())
   end)
 
-  big_font = love.graphics.newFont("noto.ttf", 12)
+  big_font = love.graphics.newFont("noto.ttf", 22)
   font = love.graphics.newFont("noto.ttf", 12)
   small_font = love.graphics.newFont("noto.ttf", 11)
   font:setLineHeight(1.3)
@@ -249,7 +248,7 @@ function love.load()
 
   -- check if version >0.9.2
   if not headless and love._version_minor == 9 and love._version_revision < 2 then
-    error("You need at least LOVE 0.9.2 to use paintonline.")
+    error("You need at least LOVE 0.9.2 to draw dicks.")
     return
   end
 
@@ -264,6 +263,7 @@ function love.load()
 
   -- try to set up a server
   if hosting then
+    -- max 10kib dl
     server_host = enet.host_create("0.0.0.0:9292", 32, 1)
 
     if not server_host then
@@ -284,7 +284,7 @@ function love.load()
   math.randomseed(love.timer.getTime())
 
   -- game info, press tab to preview
-  game_info = [[i like kebab
+  game_info = [[dick around with your friends!
 
   instructions:
   - hold right mouse to change color,
@@ -307,11 +307,11 @@ function love.load()
 
 
   thanks to:
-  - excessive (karai + holo supergroup) for their cdata lib,
+  - excessive (karai + holo supergroup) for his awesome cdata lib,
   - alexar for his colorpicker lib,
   - nix, zorg, deltaf1, holo, videahgams, karai, maxwell, sapper for being cool guys,
-  - other cool guys for being cool,
-  - people who crashed or lagged my server over and over /s.]]
+  - other cool guys for being cool guys,
+  - penis painters who crashed or lagged my server over and over.]]
 end
 
 local function log(str, ...)
@@ -879,14 +879,10 @@ local server_commands = {
         broadcast_notification(friendly_name(peer) .. " cancelled his vote for clear.", 4, {180, 0, 0})
       else
         table.insert(votes, peer)
-        broadcast_notification(friendly_name(peer) .. " voted for clear (" .. #votes .. "/" .. math.ceil(#peers * .7) .. ").", 4, {180, 0, 0})
+        broadcast_notification(friendly_name(peer) .. " voted for clear (" .. #votes .. "/" .. math.floor(#peers * .7) .. ").", 4, {180, 0, 0})
       end
 
-      if #votes >= math.ceil(#peers * .7) then
-        clear()
-
-        votes = {}
-
+      if #votes >= math.floor(#peers * .7) then
         broadcast_notification("canvas cleared.", 4, {255, 0, 0})
       end
     end
@@ -1019,7 +1015,7 @@ end
 function love.draw()
   local w, h = love.graphics.getDimensions()
 
-  -- Paainted shit
+  -- painted shit
   love.graphics.setColor(255, 255, 255)
 
   -- slime the magician recommended doing this
@@ -1033,7 +1029,7 @@ function love.draw()
   love.graphics.draw(canvas)
   love.graphics.setBlendMode("alpha")
 
-  -- unPaainted shit
+  -- unpainted shit
   love.graphics.setColor(current_color)
   local mx, my = love.mouse.getPosition()
 
@@ -1117,9 +1113,9 @@ function love.draw()
 
     love.graphics.setFont(big_font)
     love.graphics.setColor(0, 0, 0)
-    love.graphics.print(game_name, (200 - big_font:getWidth(game_name)) / 2 + 1, 5 + 1)
+    love.graphics.print("PENISDRAW", (200 - big_font:getWidth("PENISDRAW")) / 2 + 1, 5 + 1)
     love.graphics.setColor(255, 255, 255)
-    love.graphics.print(game_name, (200 - big_font:getWidth(game_name)) / 2, 5)
+    love.graphics.print("PENISDRAW", (200 - big_font:getWidth("PENISDRAW")) / 2, 5)
 
     love.graphics.setColor(0, 0, 0)
     love.graphics.rectangle("fill", 5 + 1, big_font:getHeight() + 5 + 1, 190, 1)
@@ -1190,8 +1186,8 @@ function love.update(dt)
       if event.type == "receive" then
         receive_data(event.data, event.peer, true)
       elseif event.type == "connect" then
-        log("%s (%s) joined the Paaint.", tostring(event.peer), friendly_name(event.peer))
-        broadcast_notification(string.format("%s joined the Paaint.", friendly_name(event.peer)))
+        log("%s (%s) joined the paint.", tostring(event.peer), friendly_name(event.peer))
+        broadcast_notification(string.format("%s joined the paint.", friendly_name(event.peer)))
 
         -- into the peer table
         table.insert(peers, event.peer)
@@ -1213,8 +1209,8 @@ function love.update(dt)
         -- send the new userlist to everyone
         broadcast_data(serialize_user_list(peers))
       elseif event.type == "disconnect" then
-        log("%s (%s) left the Paaint.", tostring(event.peer), friendly_name(event.peer))
-        broadcast_notification(string.format("%s lefted the Paaint.", friendly_name(event.peer)))
+        log("%s (%s) left the paint.", tostring(event.peer), friendly_name(event.peer))
+        broadcast_notification(string.format("%s lefted the paint.", friendly_name(event.peer)))
 
         -- remove the mouse
         if server_rules["send mouse position"] == "yes" then

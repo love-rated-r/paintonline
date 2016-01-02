@@ -1,5 +1,5 @@
-# paintonline
-online paint application made with love game framework.
+# penisdraw
+drawing dicks with friends has never been so easy!
 
 ## stuff used
 - noto font licensed under apache license
